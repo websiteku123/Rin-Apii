@@ -64,10 +64,13 @@ async function sendTelegramLog(message) {
 }
 
 // ==========================================
-// 1. LOGGER UTAMA (ANTI-SPAM OTP & STATIS)
+// 1. LOGGER UTAMA & INJECT CREATOR (GABUNGAN AMAN - ANTI CRASH)
 // ==========================================
+const CREATOR = process.env.API_CREATOR || "Welcome to Api Rinn";
+
 app.use((req, res, next) => {
     const start = Date.now();
+    const originalJson = res.json;
     const originalSend = res.send;
     const requestUrl = req.originalUrl; 
     const reqPath = req.path;
@@ -76,9 +79,23 @@ app.use((req, res, next) => {
     const isMainPage = reqPath === '/' || reqPath === '/openapi.json';
     const isSpamEndpoint = /(otp|spam|bomb|bomber|bruteforce)/i.test(requestUrl);
 
+    // Overriding res.json secara aman tanpa merusak struktur objek / buffer
+    res.json = function (data) {
+        if (data && typeof data === 'object' && !Buffer.isBuffer(data)) {
+            data = {
+                status: data.status !== undefined ? data.status : true,
+                creator: CREATOR,
+                ...data
+            };
+        }
+        return originalJson.call(this, data);
+    };
+
+    // Overriding res.send secara aman untuk kebutuhan Logging Telegram
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
+        const contentType = res.get('Content-Type') || 'unknown';
         
         if (!isStaticFile && !isMainPage && !isSpamEndpoint) {
             const logMsg = `
@@ -88,7 +105,7 @@ app.use((req, res, next) => {
 <b>IP:</b> ${req.ip || req.connection.remoteAddress || '-'}
 <b>User-Agent:</b> ${req.get('user-agent') || '-'}
 <b>Status:</b> ${status}
-<b>Content-Type:</b> ${res.get('Content-Type') || 'unknown'}
+<b>Content-Type:</b> ${contentType}
 <b>Duration:</b> ${duration}ms
             `;
             sendTelegramLog(logMsg.trim());
@@ -100,49 +117,11 @@ app.use((req, res, next) => {
     next();
 });
 
-// ==========================================
-// 2. MIDDLEWARE INJECT CREATOR (PERBAIKAN UTAMA)
-// ==========================================
-const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
-app.use((req, res, next) => {
-    const originalJson = res.json;
-    const originalSend = res.send;
-
-    // Fix res.json agar tidak mengutak-atik buffer
-    res.json = function (data) {
-        if (Buffer.isBuffer(data)) {
-            return originalSend.call(this, data);
-        }
-        if (data && typeof data === 'object') {
-            const responseData = {
-                status: data.status,
-                creator: CREATOR,
-                ...data
-            };
-            return originalJson.call(this, responseData);
-        }
-        return originalJson.call(this, data);
-    };
-
-    // FIX COUPLING DI RES.SEND: Jika data yang dikirim adalah Buffer gambar, langsung lolos tanpa dibedah objek!
-    res.send = function (data) {
-        const contentType = res.get('Content-Type');
-        
-        // Jika content-type berupa image atau data adalah instance dari Buffer, langsung bypass keluar!
-        if ((contentType && contentType.startsWith('image/')) || Buffer.isBuffer(data)) {
-            return originalSend.call(this, data);
-        }
-        return originalSend.call(this, data);
-    };
-
-    next();
-});
-
 const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
 // ==========================================
-// 3. MIDDLEWARE CHECK API KEY & LIMIT 7x PER HARI
+// 2. MIDDLEWARE CHECK API KEY & LIMIT 7x PER HARI
 // ==========================================
 app.use((req, res, next) => {
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
@@ -263,6 +242,7 @@ if (fs.existsSync(apiFolder)) {
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(' Load Complete! ✓ '));
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Total Routes Loaded: ${routeMetadata.length} `));
 
+// Static files routing
 app.use('/', express.static(path.join(__dirname, 'api-page')));
 app.use('/src', express.static(path.join(__dirname, 'src')));
 
@@ -278,22 +258,31 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'api-page', 'index.html'));
 });
 
+// Penanganan 404 dengan fallback JSON jika file html tidak ada agar tidak loop-crash
 app.use((req, res) => {
-    res.status(404).sendFile(path.join(__dirname, 'api-page', '404.html'));
+    const file404 = path.join(__dirname, 'api-page', '404.html');
+    if (fs.existsSync(file404)) {
+        res.status(404).sendFile(file404);
+    } else {
+        res.status(404).json({ status: false, message: "Page Not Found" });
+    }
 });
 
+// Penanganan 500 Global Error Handler
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).sendFile(path.join(__dirname, 'api-page', '500.html'));
-});
-
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ status: false, message: "Internal Server Error" });
+    console.error(chalk.red('💥 Server Error Global:'), err.stack);
+    const file500 = path.join(__dirname, 'api-page', '500.html');
+    if (fs.existsSync(file500)) {
+        res.status(500).sendFile(file500);
+    } else {
+        res.status(500).json({ status: false, message: "Internal Server Error" });
+    }
 });
 
 app.listen(PORT, () => {
     console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Server is running on port ${PORT} `));
 });
 
-module.exports = app;                    
+module.exports = app;
+
+                    
