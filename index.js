@@ -16,7 +16,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cors());
 
 // ==========================================
-// LOAD CONFIGURATION FROM config.json (SECURE)
+// LOAD CONFIGURATION FROM config.json
 // ==========================================
 let config = {};
 const configPath = path.join(__dirname, 'config.json');
@@ -25,7 +25,7 @@ try {
     if (fs.existsSync(configPath)) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     } else {
-        console.warn(chalk.yellow('⚠️  Warning: config.json tidak ditemukan.'));
+        console.warn(chalk.yellow('⚠️  Warning: config.json tidak ditemukan. Menggunakan fallback env / string kosong.'));
     }
 } catch (error) {
     console.error(chalk.red('❌ Gagal membaca atau parse config.json:', error.message));
@@ -33,22 +33,11 @@ try {
 
 const TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || "";
-const VALID_API_KEY = config.API_KEY; 
-
-let apiKeyUsageStore = {}; 
-let currentTrackingDate = new Date().toDateString(); 
-
-function checkAndResetLimitAtMidnight() {
-    const today = new Date().toDateString();
-    if (today !== currentTrackingDate) {
-        apiKeyUsageStore = {}; 
-        currentTrackingDate = today; 
-        console.log(chalk.bgGreen.black(' 🔄 [SYSTEM] Sudah jam 00:00 WIB, semua limit apikey berhasil di-reset ke awal! '));
-    }
-}
+const VALID_API_KEY = config.API_KEY || "Rinn"; 
 
 async function sendTelegramLog(message) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+        console.log('Telegram token/chat ID not set');
         return;
     }
     try {
@@ -58,62 +47,58 @@ async function sendTelegramLog(message) {
             text: message,
             parse_mode: 'HTML'
         });
+        console.log('Telegram log sent');
     } catch (err) {
         console.error('Telegram log error:', err.response ? err.response.data : err.message);
     }
 }
 
 // ==========================================
-// 1. LOGGER UTAMA & INJECT CREATOR (GABUNGAN AMAN - ANTI CRASH)
+// 1. LOGGER DI PALING ATAS
 // ==========================================
-const CREATOR = process.env.API_CREATOR || "Welcome to Api Rinn";
-
 app.use((req, res, next) => {
     const start = Date.now();
-    const originalJson = res.json;
     const originalSend = res.send;
     const requestUrl = req.originalUrl; 
-    const reqPath = req.path;
 
-    const isStaticFile = /\.(json|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|otf|map)$/i.test(reqPath);
-    const isMainPage = reqPath === '/' || reqPath === '/openapi.json';
-    const isSpamEndpoint = /(otp|spam|bomb|bomber|bruteforce)/i.test(requestUrl);
-
-    // Overriding res.json secara aman tanpa merusak struktur objek / buffer
-    res.json = function (data) {
-        if (data && typeof data === 'object' && !Buffer.isBuffer(data)) {
-            data = {
-                status: data.status !== undefined ? data.status : true,
-                creator: CREATOR,
-                ...data
-            };
-        }
-        return originalJson.call(this, data);
-    };
-
-    // Overriding res.send secara aman untuk kebutuhan Logging Telegram
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
-        const contentType = res.get('Content-Type') || 'unknown';
-        
-        if (!isStaticFile && !isMainPage && !isSpamEndpoint) {
-            const logMsg = `
-<b>📥 Request API</b>
+
+        const logMsg = `
+<b>📥 Request</b>
 <b>Method:</b> ${req.method}
 <b>URL:</b> ${requestUrl}
 <b>IP:</b> ${req.ip || req.connection.remoteAddress || '-'}
 <b>User-Agent:</b> ${req.get('user-agent') || '-'}
 <b>Status:</b> ${status}
-<b>Content-Type:</b> ${contentType}
 <b>Duration:</b> ${duration}ms
-            `;
-            sendTelegramLog(logMsg.trim());
-        }
+        `;
 
+        sendTelegramLog(logMsg.trim());
         return originalSend.call(this, data);
     };
 
+    next();
+});
+
+// ==========================================
+// 2. MIDDLEWARE INJECT CREATOR RESPONSE
+// ==========================================
+const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
+app.use((req, res, next) => {
+    const originalJson = res.json;
+    res.json = function (data) {
+        if (data && typeof data === 'object') {
+            const responseData = {
+                status: data.status,
+                creator: CREATOR,
+                ...data
+            };
+            return originalJson.call(this, responseData);
+        }
+        return originalJson.call(this, data);
+    };
     next();
 });
 
@@ -121,14 +106,12 @@ const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
 // ==========================================
-// 2. MIDDLEWARE CHECK API KEY & LIMIT 7x PER HARI
+// 3. MIDDLEWARE CEK API KEY (MENGGUNAKAN PROPERTI INTERNAL)
 // ==========================================
 app.use((req, res, next) => {
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
         return next();
     }
-
-    checkAndResetLimitAtMidnight();
 
     const matchedRoute = routeMetadata.find(route => {
         const methodMatch = route.method === 'ALL' || route.method.toLowerCase() === req.method.toLowerCase();
@@ -140,36 +123,16 @@ app.use((req, res, next) => {
         return regex.test(req.path);
     });
 
+    // Pengecekan membaca status pengaman internal dari config.json
     if (matchedRoute && matchedRoute.checkSecretKey) {
         const apiKey = req.headers['x-api-key'] || req.query.apikey || req.body?.apikey;
         
-        if (!VALID_API_KEY) {
-            return res.status(500).json({
-                status: false,
-                message: 'Internal Server Error: API Key belum dikonfigurasi di config.json server.'
-            });
-        }
-
         if (!apiKey || apiKey !== VALID_API_KEY) {
             return res.status(401).json({
                 status: false,
                 message: 'Unauthorized: Invalid or missing API Key. Silahkan isi kolom input apikey dengan benar.'
             });
         }
-
-        if (!apiKeyUsageStore[apiKey]) {
-            apiKeyUsageStore[apiKey] = 0;
-        }
-
-        if (apiKeyUsageStore[apiKey] >= 7) {
-            return res.status(429).json({
-                status: false,
-                message: `Limit Habis: Apikey ini telah mencapai batas maksimal 7 request per hari. Limit akan di-reset otomatis pada jam 00:00 WIB malam nanti.`
-            });
-        }
-
-        apiKeyUsageStore[apiKey] += 1;
-        console.log(chalk.cyan(`[LIMIT TRACKER] Apikey "${apiKey}" digunakan. Hit ke: ${apiKeyUsageStore[apiKey]}/7 hari ini.`));
     }
     next();
 });
@@ -190,6 +153,7 @@ function registerRoute(routeDef, category) {
         return;
     }
 
+    // Menentukan apakah rute ini membutuhkan pengaman kunci rahasia
     const needsKey = routeDef.isApikey || metadata.isApikey || false;
 
     routeMetadata.push({
@@ -198,7 +162,9 @@ function registerRoute(routeDef, category) {
         category: metadata.category || category || 'Umum',
         description: metadata.description || '',
         parameters: metadata.parameters || [],
+        // Diubah ke false agar komponen input bawaan di atas menghilang secara visual dari halaman UI
         isApikey: false, 
+        // Penanda rahasia agar backend Express kamu tetap mengunci rute ini di latar belakang
         checkSecretKey: needsKey 
     });
 }
@@ -242,7 +208,7 @@ if (fs.existsSync(apiFolder)) {
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(' Load Complete! ✓ '));
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Total Routes Loaded: ${routeMetadata.length} `));
 
-// Static files routing
+// Static files routing & default pages
 app.use('/', express.static(path.join(__dirname, 'api-page')));
 app.use('/src', express.static(path.join(__dirname, 'src')));
 
@@ -258,25 +224,13 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'api-page', 'index.html'));
 });
 
-// Penanganan 404 dengan fallback JSON jika file html tidak ada agar tidak loop-crash
 app.use((req, res) => {
-    const file404 = path.join(__dirname, 'api-page', '404.html');
-    if (fs.existsSync(file404)) {
-        res.status(404).sendFile(file404);
-    } else {
-        res.status(404).json({ status: false, message: "Page Not Found" });
-    }
+    res.status(404).sendFile(path.join(__dirname, 'api-page', '404.html'));
 });
 
-// Penanganan 500 Global Error Handler
 app.use((err, req, res, next) => {
-    console.error(chalk.red('💥 Server Error Global:'), err.stack);
-    const file500 = path.join(__dirname, 'api-page', '500.html');
-    if (fs.existsSync(file500)) {
-        res.status(500).sendFile(file500);
-    } else {
-        res.status(500).json({ status: false, message: "Internal Server Error" });
-    }
+    console.error(err.stack);
+    res.status(500).sendFile(path.join(__dirname, 'api-page', '500.html'));
 });
 
 app.listen(PORT, () => {
@@ -284,5 +238,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-
-                    
