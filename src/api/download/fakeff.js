@@ -125,11 +125,8 @@ module.exports = {
             
             const textWidth = ctx.measureText(username).width;
             const posX = (canvas.width - textWidth) / 2 + 38;
-            
-            // FIX PRESISI: Diubah ke 0.805 agar teks turun pas di tengah-tengah banner nameplate bawah
-            const posY = canvas.height * 0.805;
+            const posY = canvas.height * 0.788;
 
-            // 1. RENDER SHADOW
             ctx.shadowColor = 'rgba(0,0,0,0.45)';
             ctx.shadowOffsetX = 2;
             ctx.shadowOffsetY = 2;
@@ -139,15 +136,10 @@ module.exports = {
             ctx.shadowColor = 'transparent';
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText(username, posX, posY);
 
-            // 2. METALLIC GRADIENT (Putih ke Oranye)
-            const gradient = ctx.createLinearGradient(posX, posY, posX + textWidth, posY);
-            gradient.addColorStop(0.0, '#FFFFFF');
-            gradient.addColorStop(0.3, '#FFFFFF');
-            gradient.addColorStop(0.8, '#FFCC00');
-            gradient.addColorStop(1.0, '#FFCC00');
-
-            ctx.fillStyle = gradient;
+            ctx.fillStyle = '#FFCC00';
             ctx.fillText(username, posX, posY);
 
             const buffer = canvas.toBuffer('image/jpeg', { quality: 85 });
@@ -170,7 +162,7 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar Fake lobby Free Fire dengan 17 tamplate keren dan cocok untuk bahan jj.',
+        description: 'Membuat gambar Fake lobby Free Fire Dengan 17 tamplate berbeda.',
         parameters: [
             {
                 name: 'username',
