@@ -3,7 +3,6 @@ const chalk = require('chalk');
 const fs = require('fs');
 const cors = require('cors');
 const path = require('path');
-const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -18,62 +17,14 @@ app.use(cors());
 const CREATOR = process.env.API_CREATOR || "Rin imup";
 const VALID_API_KEY = process.env.API_KEY || "Rinn";
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
+// ==========================================
+// SKIP TELEGRAM LOG (MEMPERCEPAT)
+// ==========================================
+// Telegram di-disable untuk menghindari timeout
 
-let apiKeyUsageStore = {};
-let currentTrackingDate = new Date().toDateString();
-
-function checkAndResetLimitAtMidnight() {
-    const today = new Date().toDateString();
-    if (today !== currentTrackingDate) {
-        apiKeyUsageStore = {};
-        currentTrackingDate = today;
-        console.log('[SYSTEM] Limit apikey reset!');
-    }
-}
-
-async function sendTelegramLog(message) {
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-    try {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: TELEGRAM_CHAT_ID,
-            text: message,
-            parse_mode: 'HTML'
-        });
-    } catch (err) {
-        console.error('Telegram error:', err.message);
-    }
-}
-
-app.use((req, res, next) => {
-    const start = Date.now();
-    const originalSend = res.send;
-    const requestUrl = req.originalUrl;
-
-    res.send = function(data) {
-        const duration = Date.now() - start;
-        const status = res.statusCode;
-        const isImage = res.get('Content-Type')?.startsWith('image/');
-        const isStatic = /\.(json|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|otf|map)$/i.test(req.path);
-        const isSpam = /(otp|spam|bomb|bomber|bruteforce)/i.test(requestUrl);
-
-        if (!isStatic && !isSpam && !isImage && req.path !== '/' && req.path !== '/openapi.json') {
-            const logMsg = `
-<b>📥 Request</b>
-<b>Method:</b> ${req.method}
-<b>URL:</b> ${requestUrl}
-<b>IP:</b> ${req.ip || '-'}
-<b>Status:</b> ${status}
-<b>Duration:</b> ${duration}ms
-            `;
-            sendTelegramLog(logMsg.trim());
-        }
-        return originalSend.call(this, data);
-    };
-    next();
-});
-
+// ==========================================
+// MIDDLEWARE INJECT CREATOR (OPTIMASI)
+// ==========================================
 app.use((req, res, next) => {
     const originalJson = res.json;
     const originalSend = res.send;
@@ -106,12 +57,13 @@ app.use((req, res, next) => {
 const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
+// ==========================================
+// API KEY MIDDLEWARE (SEDERHANA)
+// ==========================================
 app.use((req, res, next) => {
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
         return next();
     }
-
-    checkAndResetLimitAtMidnight();
 
     const matchedRoute = routeMetadata.find(route => {
         const methodMatch = route.method === 'ALL' || route.method.toLowerCase() === req.method.toLowerCase();
@@ -128,22 +80,9 @@ app.use((req, res, next) => {
         if (!apiKey || apiKey !== VALID_API_KEY) {
             return res.status(401).json({
                 status: false,
-                message: 'Unauthorized: Invalid or missing API Key.'
+                message: 'Unauthorized: Invalid API Key.'
             });
         }
-
-        if (!apiKeyUsageStore[apiKey]) {
-            apiKeyUsageStore[apiKey] = 0;
-        }
-
-        if (apiKeyUsageStore[apiKey] >= 7) {
-            return res.status(429).json({
-                status: false,
-                message: 'Limit 7 request/hari tercapai. Reset jam 00:00 WIB.'
-            });
-        }
-
-        apiKeyUsageStore[apiKey] += 1;
     }
     next();
 });
@@ -177,6 +116,9 @@ function registerRoute(routeDef, category) {
     });
 }
 
+// ==========================================
+// LOAD ROUTES
+// ==========================================
 if (fs.existsSync(apiFolder)) {
     fs.readdirSync(apiFolder).forEach((subfolder) => {
         const subfolderPath = path.join(apiFolder, subfolder);
@@ -213,6 +155,9 @@ if (fs.existsSync(apiFolder)) {
 
 console.log(chalk.green(`✓ Total Routes Loaded: ${routeMetadata.length}`));
 
+// ==========================================
+// STATIC FILES
+// ==========================================
 app.use('/', express.static(path.join(__dirname, 'api-page')));
 app.use('/src', express.static(path.join(__dirname, 'src')));
 
@@ -228,6 +173,9 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'api-page', 'index.html'));
 });
 
+// ==========================================
+// ERROR HANDLER
+// ==========================================
 app.use((req, res) => {
     if (req.accepts('json')) {
         res.status(404).json({ status: false, message: 'Endpoint tidak ditemukan' });
@@ -238,12 +186,7 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
     console.error('❌ Error:', err.message);
-    console.error(err.stack);
-    
-    if (res.headersSent) {
-        return next(err);
-    }
-    
+    if (res.headersSent) return next(err);
     res.status(500).json({
         status: false,
         creator: CREATOR,
@@ -255,4 +198,4 @@ app.listen(PORT, () => {
     console.log(chalk.green(`✓ Server running on port ${PORT}`));
 });
 
-module.exports = app;                    
+module.exports = app;
