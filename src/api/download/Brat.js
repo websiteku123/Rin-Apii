@@ -1,4 +1,4 @@
-const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+      const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const { writeFileSync, existsSync, readFileSync } = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
@@ -14,16 +14,36 @@ const THEMES = {
   hijau: { bg: '#8ace00', text: '#000000' }
 };
 
-async function downloadFile(url, dest) {
-  const res = await fetch(url);
-  const buf = Buffer.from(await res.arrayBuffer());
-  writeFileSync(dest, buf);
-  return buf;
+// Pengaman Download dengan Batas Waktu Maksimal 4 Detik
+async function downloadFileWithTimeout(url, dest) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000); // Batas aman 4 detik
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    writeFileSync(dest, buf);
+    return buf;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.error(`[DOWNLOAD WARN] Gagal download ${url}:`, err.message);
+    return null;
+  }
 }
 
 async function ensureFont() {
-  if (!existsSync(FONT_PATH)) await downloadFile(FONT_URL, FONT_PATH);
-  GlobalFonts.registerFromPath(FONT_PATH, 'ArialNarrow');
+  if (!existsSync(FONT_PATH)) {
+    const success = await downloadFileWithTimeout(FONT_URL, FONT_PATH);
+    if (!success) return false;
+  }
+  try {
+    GlobalFonts.registerFromPath(FONT_PATH, 'ArialNarrow');
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 let emojiMap = null;
@@ -35,14 +55,23 @@ function emojiToUnicode(emoji) {
 
 async function loadEmojiMap() {
   if (emojiMap) return emojiMap;
-  if (!existsSync(EMOJI_JSON_PATH)) await downloadFile(EMOJI_JSON_URL, EMOJI_JSON_PATH);
-  emojiMap = JSON.parse(readFileSync(EMOJI_JSON_PATH, 'utf-8'));
-  return emojiMap;
+  if (!existsSync(EMOJI_JSON_PATH)) {
+    const success = await downloadFileWithTimeout(EMOJI_JSON_URL, EMOJI_JSON_PATH);
+    if (!success) return null;
+  }
+  try {
+    emojiMap = JSON.parse(readFileSync(EMOJI_JSON_PATH, 'utf-8'));
+    return emojiMap;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function getEmojiImage(emoji) {
   if (emojiImageCache.has(emoji)) return emojiImageCache.get(emoji);
   const map = await loadEmojiMap();
+  if (!map) return null;
+
   const base = emojiToUnicode(emoji);
   const variants = [
     base,
@@ -57,14 +86,21 @@ async function getEmojiImage(emoji) {
     if (map[v]) { b64 = map[v]; break; }
   }
   if (!b64) return null;
-  const img = await loadImage(Buffer.from(b64, 'base64'));
-  emojiImageCache.set(emoji, img);
-  return img;
+  try {
+    const img = await loadImage(Buffer.from(b64, 'base64'));
+    emojiImageCache.set(emoji, img);
+    return img;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function drawAppleEmoji(ctx, emoji, x, y, size) {
   const img = await getEmojiImage(emoji);
-  if (!img) { ctx.fillText(emoji, x, y); return; }
+  if (!img) { 
+    ctx.fillText(emoji, x, y); 
+    return; 
+  }
   ctx.drawImage(img, x, y, size, size);
 }
 
@@ -127,7 +163,7 @@ function fitsAt(ctx, text, fontSize, maxWidth, maxHeight, lineGap) {
 
 function findBestFontSize(ctx, text, maxWidth, maxHeight, lineGap) {
   let lo = 10;
-  let hi = 700;
+  let hi = 200; // Dikurangi dari 700 ke 200 untuk mempercepat perulangan render di Vercel
   let best = lo;
 
   while (lo <= hi) {
@@ -160,14 +196,15 @@ module.exports = {
 
       const selectedTheme = THEMES[themeInput] || THEMES.white;
 
-      const size = 1000;
-      const padding = 80;
-      const lineGap = 20;
+      const size = 500; // Dioptimasi ke 500x500 agar load Canvas sangat cepat & hemat memori Vercel
+      const padding = 40;
+      const lineGap = 10;
       const maxWidth = size - padding * 2;
       const maxHeight = size - padding * 2;
 
+      // Jalankan tanpa memblokir jika terjadi kendala jaringan internet
       await ensureFont();
-      await loadEmojiMap();
+      try { await loadEmojiMap(); } catch (e) {}
 
       const canvas = createCanvas(size, size);
       const ctx = canvas.getContext('2d');
@@ -178,9 +215,7 @@ module.exports = {
       ctx.fillStyle = selectedTheme.bg;
       ctx.fillRect(0, 0, size, size);
 
-      // FIX BLUR: Menambahkan efek blur tipis (1px) agar tulisan estetik khas Brat blur
       ctx.filter = 'blur(1px)';
-
       ctx.fillStyle = selectedTheme.text;
       ctx.font = `${fontSize}px ArialNarrow`;
       ctx.textAlign = 'left';
@@ -193,10 +228,7 @@ module.exports = {
         y += fontSize + lineGap;
       }
 
-      // Encode langsung ke buffer gambar PNG mentah
       const buffer = await canvas.encode('png');
-
-      // Set header respons agar dibaca browser sebagai gambar langsung
       res.setHeader('Content-Type', 'image/png');
       return res.send(buffer);
 
@@ -212,18 +244,8 @@ module.exports = {
     category: 'Maker',
     description: 'Membuat stiker teks bergaya Brat langsung dalam format gambar PNG dengan efek tipis blur.',
     parameters: [
-      {
-        name: 'text',
-        in: 'query',
-        required: true,
-        description: 'Teks tulisan stiker Brat'
-      },
-      {
-        name: 'theme',
-        in: 'query',
-        required: false,
-        description: 'Pilihan warna tema background: white, black, atau green'
-      }
+      { name: 'text', in: 'query', required: true, description: 'Teks tulisan stiker Brat' },
+      { name: 'theme', in: 'query', required: false, description: 'Pilihan warna tema background: white, black, atau green' }
     ],
   }
 };
