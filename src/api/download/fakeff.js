@@ -127,9 +127,11 @@ module.exports = {
             
             const textWidth = ctx.measureText(username).width;
             
-            // Posisi X dan Y mengikuti formula eksak dari setelan FFmpeg/Bot
+            // Posisi X mengikuti formula eksak dari setelan FFmpeg/Bot
             const posX = (canvas.width - textWidth) / 2 + 38;
-            const posY = canvas.height * 0.788;
+            
+            // FIX POSISI Y: Diubah ke 0.780 (sedikit lebih naik dari bawaan asli 0.788 agar pas di tengah banner nameplate)
+            const posY = canvas.height * 0.780;
 
             // ==========================================
             // AMBIL ALIH CANVAS LOGIC (WARNA & GRADIENT)
@@ -148,10 +150,9 @@ module.exports = {
             ctx.shadowOffsetY = 0;
 
             // 2. CREATE METALLIC GRADIENT (Transisi Putih ke Oranye dari kiri ke kanan teks)
-            // Diambil dari rumus blend FFmpeg: W*0.2 (White) ke W*0.8 (Orange) dihitung dari titik koordinat teks
             const gradient = ctx.createLinearGradient(posX, posY, posX + textWidth, posY);
             gradient.addColorStop(0.0, '#FFFFFF'); // Sisi kiri Putih Bersih
-            gradient.addColorStop(0.3, '#FFFFFF'); // Transisi mulai berjalan lembut
+            gradient.addColorStop(0.3, '#FFFFFF'); // Transisi berjalan lembut
             gradient.addColorStop(0.8, '#FFCC00'); // Sisi kanan Oranye khas FF
             gradient.addColorStop(1.0, '#FFCC00');
 
@@ -181,7 +182,7 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar Fake lobby Free Fire.',
+        description: 'Membuat gambar lobby Free Fire dengan 17 tamplate.',
         parameters: [
             {
                 name: 'username',
