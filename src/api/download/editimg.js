@@ -3,9 +3,9 @@ const FormData = require('form-data');
 
 // Fungsi utama memproses manipulasi gambar via Banana-Nano AI
 async function processEditImage(imageUrl, promptText) {
-  // Gunakan AbortController untuk membatasi total waktu request agar tidak menggantung serverless
+  // Diturunkan ke 8 detik agar merespons SEBELUM limit 10 detik Vercel Hobby Plan memotongnya
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000); // Batas aman maksimal 12 detik
+  const timeoutId = setTimeout(() => controller.abort(), 8000); 
 
   try {
     // 1. Download gambar dari URL parameter menjadi buffer biner
@@ -51,7 +51,7 @@ async function processEditImage(imageUrl, promptText) {
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('Proses generate AI Banana-Nano terlalu lama (Timeout). Silakan coba beberapa saat lagi.');
+      throw new Error('Server sedang sibuk. Proses AI Banana-Nano memakan waktu terlalu lama (Timeout 8s).');
     }
     throw error;
   }
@@ -60,9 +60,8 @@ async function processEditImage(imageUrl, promptText) {
 module.exports = {
   method: 'get',
   path: '/tools/editimg',
-  // Pengaturan Vercel jika akun ditingkatkan ke Pro
   config: {
-    maxDuration: 60 
+    maxDuration: 60 // Hanya aktif jika dideploy menggunakan Vercel Pro/Enterprise
   },
   handler: async (req, res) => {
     try {
@@ -77,7 +76,6 @@ module.exports = {
         });
       }
 
-      // Menjalankan proses manipulasi gambar AI
       const finalMediaUrl = await processEditImage(imageUrl, promptText);
 
       res.json({
@@ -92,11 +90,10 @@ module.exports = {
         }
       });
     } catch (err) {
-      // Jika eror karena timeout atau gangguan pihak ketiga, kirim respons status 504/500 yang aman
-      res.status(err.message.includes('Timeout') ? 504 : 500).json({
+      res.status(504).json({
         status: false,
         creator: "Rin imup",
-        message: err.message || 'Terjadi kesalahan internal saat memproses gambar.'
+        message: err.message || 'Terjadi kesalahan internal / Serverless timeout saat memproses gambar.'
       });
     }
   },
