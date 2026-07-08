@@ -1,27 +1,19 @@
 {
-  "name": "Rin api",
+  "name": "api-rinn",
   "version": "1.0.0",
-  "description": "A simple and customizable API documentation interface built with Express.js.",
+  "description": "REST API with Express",
   "main": "index.js",
-  "type": "commonjs",
   "scripts": {
-    "start": "node --no-deprecation index.js"
+    "start": "node index.js"
   },
-  "author": "Rin",
-  "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.8",
-    "body-parser": "^1.20.3",
-    "cheerio": "^1.0.0",
-    "cors": "^2.8.5",
+    "@napi-rs/canvas": "^0.1.44",
+    "axios": "^1.6.2",
     "chalk": "^4.1.2",
-    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
     "fs": "^0.0.1-security",
-    "https": "^1.0.0",
-    "node-fetch": "^2.6.1",
-    "yt-search": "^2.12.1",
-    "@napi-rs/canvas": "^0.1.52",
-    "form-data": "^4.0.0",
-    "fake-ff": "^1.0.1"
+    "node-fetch": "^2.7.0",
+    "path": "^0.12.7"
   }
 }
