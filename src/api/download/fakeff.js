@@ -182,7 +182,7 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar lobby Free Fire dengan 17 tamplate.',
+        description: 'Membuat gambar lobby Free Fire dengan 17 tamplate,cocok untuk bahan jj.',
         parameters: [
             {
                 name: 'username',
