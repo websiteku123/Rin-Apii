@@ -126,8 +126,8 @@ module.exports = {
             const textWidth = ctx.measureText(username).width;
             const posX = (canvas.width - textWidth) / 2 + 38;
             
-            // FIX: Diganti dari 0.788 ke 0.778 agar posisi naik 1% ke atas
-            const posY = canvas.height * 0.778;
+            // FIX: Menggunakan nilai koordinat tetap 250 agar teks melompat naik ke posisi tengah atas yang kamu mau
+            const posY = 250;
 
             ctx.shadowColor = 'rgba(0,0,0,0.45)';
             ctx.shadowOffsetX = 2;
@@ -164,7 +164,7 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar Fake lobby Free Fire.',
+        description: 'Membuat gambar lobby Free Fire.',
         parameters: [
             {
                 name: 'username',
