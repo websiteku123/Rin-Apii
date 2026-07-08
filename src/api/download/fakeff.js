@@ -113,8 +113,10 @@ module.exports = {
             const canvas = createCanvas(templateImage.width, templateImage.height);
             const ctx = canvas.getContext('2d');
 
+            // Gambar background template asli
             ctx.drawImage(templateImage, 0, 0);
 
+            // Kalkulasi ukuran Font berdasarkan panjang karakter teks
             const fontSize = username.length < 8 ? canvas.width * 0.046 : 
                            username.length <= 15 ? canvas.width * 0.047 : 
                            canvas.width * 0.036;
@@ -124,25 +126,40 @@ module.exports = {
             ctx.font = `${fontSize}px TeutonNormal`;
             
             const textWidth = ctx.measureText(username).width;
-            const posX = (canvas.width - textWidth) / 2 + 38;
             
-            // FIX: Menggunakan nilai koordinat tetap 250 agar teks melompat naik ke posisi tengah atas yang kamu mau
-            const posY = 250;
+            // Posisi X dan Y mengikuti formula eksak dari setelan FFmpeg/Bot
+            const posX = (canvas.width - textWidth) / 2 + 38;
+            const posY = canvas.height * 0.788;
 
+            // ==========================================
+            // AMBIL ALIH CANVAS LOGIC (WARNA & GRADIENT)
+            // ==========================================
+            
+            // 1. RENDER SHADOW (Efek bayangan hitam tipis transparan di belakang teks)
             ctx.shadowColor = 'rgba(0,0,0,0.45)';
             ctx.shadowOffsetX = 2;
             ctx.shadowOffsetY = 2;
             ctx.fillStyle = 'rgba(0,0,0,0.45)';
             ctx.fillText(username, posX, posY);
 
+            // Matikan native shadow canvas agar tidak merusak render gradient teks utama
             ctx.shadowColor = 'transparent';
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
-            ctx.fillStyle = '#FFFFFF';
+
+            // 2. CREATE METALLIC GRADIENT (Transisi Putih ke Oranye dari kiri ke kanan teks)
+            // Diambil dari rumus blend FFmpeg: W*0.2 (White) ke W*0.8 (Orange) dihitung dari titik koordinat teks
+            const gradient = ctx.createLinearGradient(posX, posY, posX + textWidth, posY);
+            gradient.addColorStop(0.0, '#FFFFFF'); // Sisi kiri Putih Bersih
+            gradient.addColorStop(0.3, '#FFFFFF'); // Transisi mulai berjalan lembut
+            gradient.addColorStop(0.8, '#FFCC00'); // Sisi kanan Oranye khas FF
+            gradient.addColorStop(1.0, '#FFCC00');
+
+            // Warnai teks utama dengan hasil campuran gradient di atas
+            ctx.fillStyle = gradient;
             ctx.fillText(username, posX, posY);
 
-            ctx.fillStyle = '#FFCC00';
-            ctx.fillText(username, posX, posY);
+            // ==========================================
 
             const buffer = canvas.toBuffer('image/jpeg', { quality: 85 });
 
@@ -164,7 +181,7 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar lobby Free Fire.',
+        description: 'Membuat gambar Fake lobby Free Fire.',
         parameters: [
             {
                 name: 'username',
