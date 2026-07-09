@@ -1,9 +1,9 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
-const { writeFileSync, existsSync } = require('fs');
+const { writeFileSync, existsSync, mkdirSync } = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 
-// Konfigurasi URL Aset Global API (Menggunakan font .ttf murni agar aman dari blokir)
+// Konfigurasi URL Aset Global API (Menggunakan font .ttf murni asli dari Google Fonts GitHub)
 const BG_URL = 'https://raw.githubusercontent.com/ryyntwx/allimagerin/refs/heads/main/F1.png';
 const POPPINS_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-SemiBold.ttf';
 const INTER_MEDIUM_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/inter/static/Inter-Medium.ttf';
@@ -16,7 +16,12 @@ const POPPINS_PATH = path.join(TMP_DIR, 'Poppins-SemiBold.ttf');
 const INTER_MEDIUM_PATH = path.join(TMP_DIR, 'Inter-Medium.ttf');
 const INTER_BOLD_PATH = path.join(TMP_DIR, 'Inter-Bold.ttf');
 
-// Fungsi download dengan proteksi User-Agent agar tidak terkena HTTP Error 400
+// Pastikan folder penyimpanan tersedia
+if (!existsSync(TMP_DIR)) {
+    mkdirSync(TMP_DIR, { recursive: true });
+}
+
+// Fungsi download dengan proteksi User-Agent
 async function downloadToBuffer(url, destPath) {
     if (existsSync(destPath)) return;
     
@@ -34,25 +39,40 @@ async function downloadToBuffer(url, destPath) {
     writeFileSync(destPath, buf);
 }
 
-async function ensureAssets() {
-    // Unduh semua file asset utama ke folder temp OS jika belum ada
-    await downloadToBuffer(POPPINS_URL, POPPINS_PATH);
-    await downloadToBuffer(INTER_MEDIUM_URL, INTER_MEDIUM_PATH);
-    await downloadToBuffer(INTER_BOLD_URL, INTER_BOLD_PATH);
-    await downloadToBuffer(BG_URL, BG_LOCAL_PATH);
+// Variabel penanda apakah semua registrasi font global sudah selesai
+let isAssetsLoaded = false;
 
-    // Registrasi Font ke global canvas engine menggunakan font lokal yang berhasil diunduh
-    GlobalFonts.registerFromPath(POPPINS_PATH, 'PoppinsBcaApi');
-    GlobalFonts.registerFromPath(INTER_MEDIUM_PATH, 'InterMediumBcaApi');
-    GlobalFonts.registerFromPath(INTER_BOLD_PATH, 'InterBoldBcaApi');
+async function initAssets() {
+    if (isAssetsLoaded) return;
+    try {
+        // Unduh semua file asset utama ke folder temp OS jika belum ada
+        await downloadToBuffer(POPPINS_URL, POPPINS_PATH);
+        await downloadToBuffer(INTER_MEDIUM_URL, INTER_MEDIUM_PATH);
+        await downloadToBuffer(INTER_BOLD_URL, INTER_BOLD_PATH);
+        await downloadToBuffer(BG_URL, BG_LOCAL_PATH);
+
+        // Registrasi Font ke global canvas engine cukup 1 kali saja
+        GlobalFonts.registerFromPath(POPPINS_PATH, 'PoppinsBcaApi');
+        GlobalFonts.registerFromPath(INTER_MEDIUM_PATH, 'InterMediumBcaApi');
+        GlobalFonts.registerFromPath(INTER_BOLD_PATH, 'InterBoldBcaApi');
+        
+        isAssetsLoaded = true;
+    } catch (e) {
+        console.error("Gagal menginisialisasi font/asset bca:", e);
+    }
 }
+
+// Jalankan inisialisasi awal saat script dimuat pertama kali oleh sistem backend
+initAssets();
 
 module.exports = {
     method: 'get',
     path: '/api/fbca',
     handler: async (req, res) => {
         try {
-            // Mengambil parameter query secara fleksibel
+            // Memastikan ulang aset font dan background terunduh sempurna
+            await initAssets();
+
             const nameParam = req.query?.name || req.query?.nama;
             const rekParam = req.query?.rek || req.query?.rekening;
             const saldoParam = req.query?.saldo || req.query?.nominal;
@@ -70,13 +90,10 @@ module.exports = {
             const txtRek = rekParam.trim();
             const txtSaldo = saldoParam.trim();
 
-            // Memastikan aset font dan background terunduh sempurna tanpa error 400
-            await ensureAssets();
-
-            // Memuat file background F1 secara asinkronus
+            // Memuat file background F1
             const bgImg = await loadImage(BG_LOCAL_PATH);
 
-            // Set dimensi canvas secara otomatis berdasarkan aspek rasio asli gambar biar tidak gepeng
+            // Set dimensi canvas secara otomatis berdasarkan ukuran asli gambar template
             const canvasWidth = bgImg.width;
             const canvasHeight = bgImg.height;
 
@@ -127,7 +144,7 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat generator mutasi saldo dashboard BCA tanpa gepeng atau HTTP Error.',
+        description: 'Membuat generator Fake saldo bca dengan costum nama,no rek dan saldo.',
         parameters: [
             { name: 'name', in: 'query', required: true, description: 'Nama pemilik rekening' },
             { name: 'rek', in: 'query', required: true, description: 'Nomor rekening bank' },
