@@ -3,11 +3,11 @@ const { writeFileSync, existsSync } = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 
-// Konfigurasi URL Aset Global API
+// Konfigurasi URL Aset Global API (Menggunakan font .ttf murni agar aman dari blokir)
 const BG_URL = 'https://raw.githubusercontent.com/ryyntwx/allimagerin/refs/heads/main/F1.png';
-const POPPINS_URL = 'https://fonts.gstatic.com/s/poppins/v23/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2';
-const INTER_MEDIUM_URL = 'https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2';
-const INTER_BOLD_URL = 'https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7SUc.woff2';
+const POPPINS_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-SemiBold.ttf';
+const INTER_MEDIUM_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/inter/static/Inter-Medium.ttf';
+const INTER_BOLD_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/inter/static/Inter-Bold.ttf';
 
 // Tempat penyimpanan aset di direktori temporary OS
 const TMP_DIR = process.env.TMPDIR || '/tmp';
@@ -16,26 +16,35 @@ const POPPINS_PATH = path.join(TMP_DIR, 'Poppins-SemiBold.ttf');
 const INTER_MEDIUM_PATH = path.join(TMP_DIR, 'Inter-Medium.ttf');
 const INTER_BOLD_PATH = path.join(TMP_DIR, 'Inter-Bold.ttf');
 
+// Fungsi download dengan proteksi User-Agent agar tidak terkena HTTP Error 400
 async function downloadToBuffer(url, destPath) {
     if (existsSync(destPath)) return;
-    const res = await fetch(url);
+    
+    const res = await fetch(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    });
+
+    if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status} saat mengunduh URL: ${url}`);
+    }
+
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(destPath, buf);
 }
 
 async function ensureAssets() {
-    // Unduh semua Font jika belum ada di direktori tmp
+    // Unduh semua file asset utama ke folder temp OS jika belum ada
     await downloadToBuffer(POPPINS_URL, POPPINS_PATH);
     await downloadToBuffer(INTER_MEDIUM_URL, INTER_MEDIUM_PATH);
     await downloadToBuffer(INTER_BOLD_URL, INTER_BOLD_PATH);
+    await downloadToBuffer(BG_URL, BG_LOCAL_PATH);
 
-    // Registrasi Font ke dalam global scope canvas engine dengan penamaan unik
+    // Registrasi Font ke global canvas engine menggunakan font lokal yang berhasil diunduh
     GlobalFonts.registerFromPath(POPPINS_PATH, 'PoppinsBcaApi');
     GlobalFonts.registerFromPath(INTER_MEDIUM_PATH, 'InterMediumBcaApi');
     GlobalFonts.registerFromPath(INTER_BOLD_PATH, 'InterBoldBcaApi');
-
-    // Cek ketersediaan background utama
-    await downloadToBuffer(BG_URL, BG_LOCAL_PATH);
 }
 
 module.exports = {
@@ -43,7 +52,7 @@ module.exports = {
     path: '/api/fbca',
     handler: async (req, res) => {
         try {
-            // Pengambilan parameter query fleksibel sesuai arsitektur Brat API
+            // Mengambil parameter query secara fleksibel
             const nameParam = req.query?.name || req.query?.nama;
             const rekParam = req.query?.rek || req.query?.rekening;
             const saldoParam = req.query?.saldo || req.query?.nominal;
@@ -52,38 +61,37 @@ module.exports = {
                 return res.status(400).json({
                     status: false,
                     creator: "Rin imup",
-                    message: 'Parameter kurang lengkap! Diperlukan: name/nama, rek/rekening, dan saldo/nominal.'
+                    message: 'Parameter tidak lengkap! Masukkan name, rek, dan saldo.'
                 });
             }
 
-            // Standardisasi format teks input
+            // Standardisasi teks input
             const txtNama = `HALO, ${nameParam.trim().toUpperCase()}`;
             const txtRek = rekParam.trim();
             const txtSaldo = saldoParam.trim();
 
-            // Memastikan font & gambar background siap digunakan
+            // Memastikan aset font dan background terunduh sempurna tanpa error 400
             await ensureAssets();
 
-            // Memuat gambar background F1 secara dinamis terlebih dahulu
+            // Memuat file background F1 secara asinkronus
             const bgImg = await loadImage(BG_LOCAL_PATH);
 
-            // TAKTIK FIX GEPENG: Ambil dimensi real lebar & tinggi asli dari gambar cetakan
+            // Set dimensi canvas secara otomatis berdasarkan aspek rasio asli gambar biar tidak gepeng
             const canvasWidth = bgImg.width;
             const canvasHeight = bgImg.height;
 
-            // Inisialisasi Canvas mengikuti ukuran asli gambar template agar tidak kegencet
             const canvas = createCanvas(canvasWidth, canvasHeight);
             const ctx = canvas.getContext('2d');
 
-            // Gambar background penuh tanpa merusak aspek rasio asli
+            // Gambar dasar template utama
             ctx.drawImage(bgImg, 0, 0, canvasWidth, canvasHeight);
 
-            // Konfigurasi perataan teks
+            // Konfigurasi baseline teks
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
 
             // =========================================================
-            // PROSES RENDERING DATA (PRESET SIMULATOR 100% PERSIS)
+            // PROSES RENDERING TEKS (PRESET SIMULATOR 100% AKURAT)
             // =========================================================
 
             // 1. Kategori Nama (Warna Putih - Poppins SemiBold)
@@ -101,10 +109,10 @@ module.exports = {
             ctx.font = `700 46px InterBoldBcaApi`;
             ctx.fillText(txtSaldo, 184, 225);
 
-            // Encode hasil olah canvas langsung ke stream buffer gambar PNG mentah
+            // Mengonversi canvas menjadi buffer gambar mentah format PNG
             const imageBuffer = await canvas.encode('png');
 
-            // Berikan response stream content gambar langsung ke browser / bot pemanggil
+            // Kirim respons dalam wujud format gambar stream langsung ke client
             res.setHeader('Content-Type', 'image/png');
             return res.send(imageBuffer);
 
@@ -113,17 +121,17 @@ module.exports = {
             return res.status(500).json({
                 status: false,
                 creator: "Rin imup",
-                message: err.message || 'Terjadi kesalahan sistem internal pada pembuatan canvas FBCA.'
+                message: err.message || 'Terjadi kesalahan sistem internal pada canvas engine.'
             });
         }
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat generator gambar dashboard mutasi saldo BCA otomatis tanpa gepeng.',
+        description: 'Membuat generator mutasi saldo dashboard BCA tanpa gepeng atau HTTP Error.',
         parameters: [
-            { name: 'name, contoh: RIN IMUP', in: 'query', required: true, description: 'Nama pemilik rekening' },
-            { name: 'no rek, contoh: 111 - 222 - 444', in: 'query', required: true, description: 'Nomor rekening bank' },
-            { name: 'saldo, contoh: 1,000,000', in: 'query', required: true, description: 'Nominal saldo rekening' }
+            { name: 'name', in: 'query', required: true, description: 'Nama pemilik rekening' },
+            { name: 'rek', in: 'query', required: true, description: 'Nomor rekening bank' },
+            { name: 'saldo', in: 'query', required: true, description: 'Nominal saldo rekening' }
         ]
     }
 };
