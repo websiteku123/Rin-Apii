@@ -9,20 +9,15 @@ const POPPINS_URL = 'https://fonts.gstatic.com/s/poppins/v23/pxiByp8kv8JHgFVrLEj
 const INTER_MEDIUM_URL = 'https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2';
 const INTER_BOLD_URL = 'https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7SUc.woff2';
 
-// Tempat penyimpanan aset di direktori temporary OS (/tmp atau C:\Users\...\AppData\Local\Temp)
+// Tempat penyimpanan aset di direktori temporary OS
 const TMP_DIR = process.env.TMPDIR || '/tmp';
 const BG_LOCAL_PATH = path.join(TMP_DIR, 'template_bca_f1.png');
 const POPPINS_PATH = path.join(TMP_DIR, 'Poppins-SemiBold.ttf');
 const INTER_MEDIUM_PATH = path.join(TMP_DIR, 'Inter-Medium.ttf');
 const INTER_BOLD_PATH = path.join(TMP_DIR, 'Inter-Bold.ttf');
 
-// Cache memori untuk menampung buffer background template agar tidak download berulang-ulang setiap request API
-let cachedTemplateBuffer = null;
-
 async function downloadToBuffer(url, destPath) {
-    if (existsSync(destPath)) {
-        return;
-    }
+    if (existsSync(destPath)) return;
     const res = await fetch(url);
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(destPath, buf);
@@ -69,14 +64,18 @@ module.exports = {
             // Memastikan font & gambar background siap digunakan
             await ensureAssets();
 
-            // Setup dimensi canvas sesuai resolusi asli F1.png
-            const canvasWidth = 1080;
-            const canvasHeight = 501;
+            // Memuat gambar background F1 secara dinamis terlebih dahulu
+            const bgImg = await loadImage(BG_LOCAL_PATH);
+
+            // TAKTIK FIX GEPENG: Ambil dimensi real lebar & tinggi asli dari gambar cetakan
+            const canvasWidth = bgImg.width;
+            const canvasHeight = bgImg.height;
+
+            // Inisialisasi Canvas mengikuti ukuran asli gambar template agar tidak kegencet
             const canvas = createCanvas(canvasWidth, canvasHeight);
             const ctx = canvas.getContext('2d');
 
-            // Memuat gambar background F1
-            const bgImg = await loadImage(BG_LOCAL_PATH);
+            // Gambar background penuh tanpa merusak aspek rasio asli
             ctx.drawImage(bgImg, 0, 0, canvasWidth, canvasHeight);
 
             // Konfigurasi perataan teks
@@ -102,7 +101,7 @@ module.exports = {
             ctx.font = `700 46px InterBoldBcaApi`;
             ctx.fillText(txtSaldo, 184, 225);
 
-            // Encode hasil olah canvas langsung ke stream buffer gambar PNG
+            // Encode hasil olah canvas langsung ke stream buffer gambar PNG mentah
             const imageBuffer = await canvas.encode('png');
 
             // Berikan response stream content gambar langsung ke browser / bot pemanggil
@@ -120,11 +119,11 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat Fake saldo BCA cocok untuk pamer dan ini hanya fake.',
+        description: 'Membuat generator gambar dashboard mutasi saldo BCA otomatis tanpa gepeng.',
         parameters: [
-            { name: 'name', in: 'query', required: true, description: 'Nama pemilik rekening' },
-            { name: 'rek', in: 'query', required: true, description: 'Nomor rekening bank' },
-            { name: 'saldo', in: 'query', required: true, description: 'Nominal saldo rekening' }
+            { name: 'name, contoh: RIN IMUP', in: 'query', required: true, description: 'Nama pemilik rekening' },
+            { name: 'no rek, contoh: 111 - 222 - 444', in: 'query', required: true, description: 'Nomor rekening bank' },
+            { name: 'saldo, contoh: 1,000,000', in: 'query', required: true, description: 'Nominal saldo rekening' }
         ]
     }
 };
